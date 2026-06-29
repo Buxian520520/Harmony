@@ -1,0 +1,12 @@
+﻿# HarmonyOS
+.idea/
+.gradle/
+build/
+oh_modules/
+*.app
+*.hap
+local.properties
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,42 @@
+﻿{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "智能考勤"
+    },
+    {
+      "name": "login_title",
+      "value": "校园智能考勤系统"
+    },
+    {
+      "name": "checkin_button",
+      "value": "签到"
+    },
+    {
+      "name": "face_checkin",
+      "value": "扫脸签到"
+    }
+  ],
+  "color": [
+    {
+      "name": "primary",
+      "value": "#007AFF"
+    },
+    {
+      "name": "background",
+      "value": "#F5F5F5"
+    },
+    {
+      "name": "success",
+      "value": "#34C759"
+    },
+    {
+      "name": "warning",
+      "value": "#FF9500"
+    },
+    {
+      "name": "danger",
+      "value": "#FF3B30"
+    }
+  ]
+}

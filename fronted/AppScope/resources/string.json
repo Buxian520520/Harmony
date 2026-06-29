@@ -1,0 +1,12 @@
+﻿{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "智能考勤"
+    },
+    {
+      "name": "description",
+      "value": "校园智能考勤系统"
+    }
+  ]
+}

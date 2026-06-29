@@ -1,0 +1,10 @@
+﻿{
+  "name": "com.attendance.smartcheckin",
+  "version": "1.0.0",
+  "description": "校园智能考勤系统",
+  "main": "",
+  "author": {
+    "name": "attendance"
+  },
+  "dependencies": {}
+}
