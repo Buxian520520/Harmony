@@ -1,4 +1,7 @@
 import router from '@ohos.router';
+import common from '@ohos.app.ability.common';
+import { formBindingData, formProvider } from '@kit.FormKit';
+import { preferences } from '@kit.ArkData';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
 
@@ -113,6 +116,83 @@ struct Main {
     if (index === 2) { this.loadStats(); }
   }
 
+  /**
+   * Push current attendance status + pending leave count to all widget card instances.
+   * Called after loadTasks() and loadStats() finish.
+   */
+  async updateWidgetCard() {
+    try {
+      // ── Determine today's course and check-in status ──
+      let todayCourse = '暂无课程';
+      let checkinStatus = '无任务';
+      let statusColor = '#8E8E93';
+
+      if (this.tasks.length > 0) {
+        const firstTask = this.tasks[0];
+        todayCourse = firstTask.title;
+        if (this.isTaskSigned(firstTask.id)) {
+          checkinStatus = '已签到';
+          statusColor = '#34C759';
+        } else {
+          checkinStatus = '未签到';
+          statusColor = '#FF9500';
+        }
+      }
+
+      // ── Count pending leaves ──
+      let pendingCount = 0;
+      for (const l of this.leaves) {
+        if (l.status === 'pending') {
+          pendingCount++;
+        }
+      }
+
+      // ── Current time ──
+      const now = new Date();
+      const lastUpdate =
+        `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      const cardData: Record<string, string | number> = {
+        'todayCourse': todayCourse,
+        'checkinStatus': checkinStatus,
+        'statusColor': statusColor,
+        'pendingLeaveCount': pendingCount,
+        'hasPendingLeaves': pendingCount > 0 ? 1 : 0,
+        'lastUpdate': lastUpdate
+      };
+
+      const bindingData = formBindingData.createFormBindingData(cardData);
+
+      // Try reading saved formId from preferences first (set by onAddForm)
+      const context = getContext(this) as common.UIAbilityContext;
+      let updated = false;
+      try {
+        const prefs = await preferences.getPreferences(context, 'attendance_card_store');
+        const savedFormId = await prefs.get('formId', '') as string;
+        if (savedFormId) {
+          await formProvider.updateForm(savedFormId, bindingData);
+          updated = true;
+        }
+      } catch (_e) {
+        // preferences read failed, fall through to getFormsInfo
+      }
+
+      // Fallback: query all form instances and update matching ones
+      if (!updated) {
+        const formIds = await formProvider.getFormsInfo();
+        if (formIds && formIds.length > 0) {
+          for (const info of formIds) {
+            if (info['formName'] === 'AttendanceCard') {
+              await formProvider.updateForm(info['formId'], bindingData);
+            }
+          }
+        }
+      }
+    } catch (_e) {
+      // Silently handle — widget may not be added yet
+    }
+  }
+
   // ==================== Tab 0: 签到任务 ====================
 
   async loadTasks() {
@@ -130,6 +210,7 @@ struct Main {
       this.tasksError = '获取任务失败，请检查网络连接';
     } finally {
       this.tasksLoading = false;
+      this.updateWidgetCard();
     }
   }
 
@@ -422,6 +503,7 @@ struct Main {
       // Silently handle - backend may return errors for invalid data
     } finally {
       this.statsLoading = false;
+      this.updateWidgetCard();
     }
   }
 

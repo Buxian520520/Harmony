@@ -15,6 +15,10 @@
     {
       "name": "location_reason",
       "value": "用于获取位置信息进行签到定位"
+    },
+    {
+      "name": "form_desc_attendance",
+      "value": "考勤状态卡片，展示签到状态和待审批请假"
     }
   ]
 }
