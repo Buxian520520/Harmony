@@ -142,6 +142,8 @@ struct Checkin {
       if (response.code === 1 || response.code === 200) {
         this.resultMessage = response.msg || '签到成功！';
         this.resultSuccess = true;
+        // Store signed taskId so Main.ets can pick it up
+        AppStorage.setOrCreate('signed_task_id', this.taskId);
       } else {
         this.resultMessage = response.msg || '签到失败';
         this.resultSuccess = false;
@@ -221,7 +223,7 @@ struct Checkin {
               Button('返回首页')
                 .type(ButtonType.Capsule).width('60%').height(44).fontSize(15)
                 .backgroundColor('#34C759').fontColor(Color.White).margin({ top: 16 })
-                .onClick(() => { router.replaceUrl({ url: 'pages/Home' }) })
+                .onClick(() => { router.back() })
             } else {
               Button('重试')
                 .type(ButtonType.Capsule).width('60%').height(44).fontSize(15)

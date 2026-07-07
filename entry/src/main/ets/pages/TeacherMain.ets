@@ -361,7 +361,7 @@ struct TeacherMain {
       ) as CreateTaskResponse;
       if (resp.code === 1 || resp.code === 200) {
         this.createSuccess = true;
-        this.createResult = resp.msg || '签到任务创建成功';
+        this.createResult = (resp.msg || '签到任务创建成功') + '，已推送通知给学生';
         this.newTaskTitle = '';
         this.newTaskCode = '';
         this.newTaskRange = '100';
@@ -695,7 +695,7 @@ struct TeacherMain {
     try {
       const resp = await LeaveApi.approveLeave(leaveId, this.approveComment, token) as LeaveActionResponse;
       if (resp.code === 1 || resp.code === 200) {
-        this.leaveActionResult = resp.msg || '已批准';
+        this.leaveActionResult = (resp.msg || '已批准') + '，已推送审批结果';
         this.approveComment = '';
         this.approvingId = 0;
         this.loadLeaves();
@@ -717,7 +717,7 @@ struct TeacherMain {
     try {
       const resp = await LeaveApi.rejectLeave(leaveId, this.approveComment, token) as LeaveActionResponse;
       if (resp.code === 1 || resp.code === 200) {
-        this.leaveActionResult = resp.msg || '已拒绝';
+        this.leaveActionResult = (resp.msg || '已拒绝') + '，已推送审批结果';
         this.approveComment = '';
         this.approvingId = 0;
         this.loadLeaves();

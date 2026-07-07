@@ -4,6 +4,7 @@ import { formBindingData, formProvider } from '@kit.FormKit';
 import { preferences } from '@kit.ArkData';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
+import { NotificationService } from '../services/NotificationService';
 
 // --- Data Interfaces ---
 
@@ -21,6 +22,8 @@ interface CheckinTask {
 
 interface CheckinRecord {
   id: number;
+  task?: number;       // Django FK field name
+  taskId?: number;     // camelCase alias
   taskTitle: string;
   type: string;
   signTime: string;
@@ -46,6 +49,23 @@ interface SignInResponse { code: number; msg?: string }
 interface CheckinRecordsResponse { code: number; msg?: string; data?: CheckinRecord[] }
 interface LeaveRecordsResponse { code: number; msg?: string; data?: LeaveRecord[] }
 interface LeaveApplyResponse { code: number; msg?: string }
+
+interface AttRecord {
+  sno: string;
+  name: string;
+  status: string;
+  signTime: string;
+  type: string;
+}
+
+interface AttendanceData {
+  list?: AttRecord[];
+  total?: number;
+  signedCount?: number;
+  unsignedCount?: number;
+}
+
+interface AttendanceResponse { code: number; msg?: string; data?: AttendanceData }
 
 // --- Helper to get token from AppStorage ---
 function getToken(): string {
@@ -98,6 +118,13 @@ struct Main {
   // Tab 3: 我的
   @State userName: string = '学生';
   @State studentNo: string = '';
+  // Notification tracking
+  private knownTaskIds: Set<number> = new Set();
+  private leaveStatusMap: Map<number, string> = new Map();
+  private warnedTaskIds: Set<number> = new Set(); // track abnormal warnings per session
+  private notifPermRequested: boolean = false;
+  // Polling observer — EntryAbility bumps this every 10s
+  @StorageLink('pollTick') @Watch('onPollTickChange') pollTick: number = 0;
 
   aboutToAppear() {
     // Redirect teachers to the teacher interface
@@ -106,14 +133,55 @@ struct Main {
       router.replaceUrl({ url: 'pages/TeacherMain' });
       return;
     }
+    this.requestNotifPermission();
+    this.applyPendingSignIn();
     this.loadTasks();
     this.loadStats();
+  }
+
+  /**
+   * Called automatically when pollTick changes (every 10s from EntryAbility)
+   */
+  onPollTickChange(): void {
+    if (this.pollTick > 0) {
+      this.loadTasks(true);
+      this.loadStats(true);
+    }
+  }
+
+  async requestNotifPermission() {
+    if (this.notifPermRequested) { return; }
+    this.notifPermRequested = true;
+    await NotificationService.requestPermission();
+  }
+
+  onPageShow() {
+    // Refresh from backend to pick up teacher补签 or other external changes
+    this.loadTasks();
+    this.loadStats();
+  }
+
+  onPageHide() {
   }
 
   onTabChange(index: number) {
     this.currentTab = index;
     if (index === 0) { this.loadTasks(); }
     if (index === 2) { this.loadStats(); }
+  }
+
+  /**
+   * Check AppStorage for a newly-signed taskId from Checkin page
+   * and update signedTaskIds accordingly.
+   */
+  applyPendingSignIn() {
+    const signedId = AppStorage.get<number>('signed_task_id');
+    if (signedId && signedId > 0) {
+      if (this.signedTaskIds.indexOf(signedId) === -1) {
+        this.signedTaskIds.push(signedId);
+      }
+      AppStorage.setOrCreate('signed_task_id', 0);
+    }
   }
 
   /**
@@ -195,8 +263,11 @@ struct Main {
 
   // ==================== Tab 0: 签到任务 ====================
 
-  async loadTasks() {
-    this.tasksLoading = true;
+  async loadTasks(silent: boolean = false) {
+    this.applyPendingSignIn();
+    if (!silent) {
+      this.tasksLoading = true;
+    }
     this.tasksError = '';
     try {
       const token = getToken();
@@ -206,10 +277,62 @@ struct Main {
       } else {
         this.tasksError = response.msg || '获取任务失败';
       }
+
+      // Rebuild signedTaskIds: check each task's attendance for current student's sno
+      try {
+        const sno = AppStorage.get<string>('username') || '';
+        if (sno && this.tasks.length > 0) {
+          const signedIds: number[] = [];
+          for (const task of this.tasks) {
+            try {
+              const attResp = await CheckinApi.getAttendance(task.id, token) as AttendanceResponse;
+              if (attResp.code === 1 || attResp.code === 200) {
+                const list = attResp.data?.list || [];
+                for (const r of list) {
+                  if (r.sno === sno && r.signTime) {
+                    signedIds.push(task.id);
+                    break;
+                  }
+                }
+              }
+            } catch (_e2) {
+              // skip individual task errors
+            }
+          }
+          // Merge with locally-tracked IDs (from applyPendingSignIn)
+          for (const id of this.signedTaskIds) {
+            if (signedIds.indexOf(id) === -1) {
+              signedIds.push(id);
+            }
+          }
+          this.signedTaskIds = signedIds;
+
+          // ── Notification: new tasks & abnormal warnings ──
+          for (const task of this.tasks) {
+            const taskId = task.id;
+            // Attendance start reminder for new tasks
+            if (!this.knownTaskIds.has(taskId)) {
+              await NotificationService.showAttendanceReminder(task.title, taskId);
+            }
+            // Abnormal warning for unsigned tasks (once per task per session)
+            if (signedIds.indexOf(taskId) === -1 && !this.warnedTaskIds.has(taskId)) {
+              await NotificationService.showAbnormalWarning(task.title, taskId);
+              this.warnedTaskIds.add(taskId);
+            }
+            this.knownTaskIds.add(taskId);
+          }
+        }
+      } catch (_e2) {
+        // silently skip
+      }
     } catch (_e) {
-      this.tasksError = '获取任务失败，请检查网络连接';
+      if (!silent) {
+        this.tasksError = '获取任务失败，请检查网络连接';
+      }
     } finally {
-      this.tasksLoading = false;
+      if (!silent) {
+        this.tasksLoading = false;
+      }
       this.updateWidgetCard();
     }
   }
@@ -478,8 +601,10 @@ struct Main {
 
   // ==================== Tab 2: 统计 ====================
 
-  async loadStats() {
-    this.statsLoading = true;
+  async loadStats(silent: boolean = false) {
+    if (!silent) {
+      this.statsLoading = true;
+    }
     const userRole = AppStorage.get<string>('user_role') || 'student';
     try {
       const token = getToken();
@@ -498,11 +623,25 @@ struct Main {
       const lr = await LeaveApi.getMyLeaves(token) as LeaveRecordsResponse;
       if (lr && lr.code === 1) {
         this.leaves = lr.data || [];
+
+        // ── Notification: leave approval result ──
+        for (const leave of this.leaves) {
+          const prevStatus = this.leaveStatusMap.get(leave.id);
+          // Show notification when status changes from 'pending' to approved/rejected
+          if (prevStatus === 'pending' && leave.status !== 'pending') {
+            await NotificationService.showLeaveApprovalResult(
+              leave.id, leave.status, leave.approvalComment || ''
+            );
+          }
+          this.leaveStatusMap.set(leave.id, leave.status);
+        }
       }
     } catch (_e) {
       // Silently handle - backend may return errors for invalid data
     } finally {
-      this.statsLoading = false;
+      if (!silent) {
+        this.statsLoading = false;
+      }
       this.updateWidgetCard();
     }
   }
@@ -714,24 +853,24 @@ struct Main {
 
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
-      TabContent() { this.TabCheckin() }
-      .tabBar(this.TabBarBuilder('📋', '签到', 0))
+        TabContent() { this.TabCheckin() }
+        .tabBar(this.TabBarBuilder('📋', '签到', 0))
 
-      TabContent() { this.TabLeave() }
-      .tabBar(this.TabBarBuilder('📝', '请假', 1))
+        TabContent() { this.TabLeave() }
+        .tabBar(this.TabBarBuilder('📝', '请假', 1))
 
-      TabContent() { this.TabStats() }
-      .tabBar(this.TabBarBuilder('📊', '统计', 2))
+        TabContent() { this.TabStats() }
+        .tabBar(this.TabBarBuilder('📊', '统计', 2))
 
-      TabContent() { this.TabProfile() }
-      .tabBar(this.TabBarBuilder('👤', '我的', 3))
-    }
-    .barHeight(56)
-    .animationDuration(0)
-    .onChange((index: number) => { this.onTabChange(index) })
-    .width('100%')
-    .height('100%')
-    .backgroundColor('#F5F5F5')
+        TabContent() { this.TabProfile() }
+        .tabBar(this.TabBarBuilder('👤', '我的', 3))
+      }
+      .barHeight(56)
+      .animationDuration(0)
+      .onChange((index: number) => { this.onTabChange(index) })
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#F5F5F5')
   }
 
   @Builder TabBarBuilder(icon: string, title: string, idx: number) {
