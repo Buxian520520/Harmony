@@ -8,6 +8,8 @@ interface CheckinTask {
   type: string;
   code: string;
   range: number;
+  lat?: number;
+  lng?: number;
   createTime: string;
   signCount: number;
 }
@@ -132,7 +134,7 @@ struct Home {
     } else {
       router.pushUrl({
         url: 'pages/Checkin',
-        params: { taskId: task.id, taskTitle: task.title, type: task.type, range: task.range }
+        params: { taskId: task.id, taskTitle: task.title, type: task.type, range: task.range, teacherLat: task.lat || 0, teacherLng: task.lng || 0 }
       });
     }
   }

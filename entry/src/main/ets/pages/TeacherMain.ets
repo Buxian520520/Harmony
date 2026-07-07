@@ -1,6 +1,27 @@
 import router from '@ohos.router';
+import geolocation from '@ohos.geolocation';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
+import { MapKitView, MapMarker } from '../widget/MapKitView';
+import { requestLocationPermissions } from '../services/utils/permissionUtil';
+import {
+  PieChart,
+  PieChartModel,
+  PieData,
+  PieDataSet,
+  PieEntry,
+  LineChart,
+  LineChartModel,
+  LineData,
+  LineDataSet,
+  EntryOhos,
+  JArrayList,
+  Legend,
+  Description,
+  ColorTemplate,
+  IPieDataSet,
+  ILineDataSet
+} from '@ohos/mpchart';
 
 // --- Data Interfaces ---
 
@@ -77,6 +98,10 @@ struct TeacherMain {
   @State createSubmitting: boolean = false;
   @State createResult: string = '';
   @State createSuccess: boolean = false;
+  @State teacherLat: number = 0;
+  @State teacherLng: number = 0;
+  @State teacherLocStatus: string = '';
+  @State teacherMapMarkers: Array<MapMarker> = [];
   // Attendance detail
   @State showAttendance: boolean = false;
   @State attendanceTaskId: number = 0;
@@ -92,6 +117,7 @@ struct TeacherMain {
   @State approveComment: string = '';
   @State approvingId: number = 0;
   @State leaveActionResult: string = '';
+  @State searchKeyword: string = '';
   // Tab 2: 数据统计
   @State statsLoading: boolean = true;
   @State totalTasks: number = 0;
@@ -101,6 +127,9 @@ struct TeacherMain {
   @State pendingLeaveCount: number = 0;
   @State approvedLeaveCount: number = 0;
   @State rejectedLeaveCount: number = 0;
+  // Chart models for Tab 2
+  private pieModel: PieChartModel = new PieChartModel();
+  private lineModel: LineChartModel = new LineChartModel();
 
   aboutToAppear() {
     // Redirect students to the student interface
@@ -109,6 +138,8 @@ struct TeacherMain {
       router.replaceUrl({ url: 'pages/Main' });
       return;
     }
+    this.initPieChart();
+    this.initLineChart();
     this.loadTasks();
     this.loadLeaves();
     this.loadStats();
@@ -203,6 +234,50 @@ struct TeacherMain {
     }
   }
 
+  async fetchTeacherLocation() {
+    this.createResult = '';
+    const granted = await requestLocationPermissions();
+    if (!granted) {
+      this.teacherLocStatus = '请授予定位权限';
+      return;
+    }
+
+    // Try current location with moderate accuracy
+    try {
+      const request: geolocation.CurrentLocationRequest = {
+        priority: geolocation.LocationRequestPriority.FIRST_FIX,
+        scenario: geolocation.LocationRequestScenario.UNSET,
+        timeoutMs: 15000,
+      };
+      const location = await geolocation.getCurrentLocation(request);
+      this.teacherLat = location.latitude;
+      this.teacherLng = location.longitude;
+      this.teacherLocStatus = '已获取教师位置';
+      this.teacherMapMarkers = [{
+        latitude: this.teacherLat, longitude: this.teacherLng,
+        label: '教师位置', color: '#FF9500'
+      }];
+      return;
+    } catch (_e1) {
+      // getCurrentLocation failed, try last known location
+    }
+
+    try {
+      const lastLoc = await geolocation.getLastLocation();
+      this.teacherLat = lastLoc.latitude;
+      this.teacherLng = lastLoc.longitude;
+      this.teacherLocStatus = '使用最近位置';
+      this.teacherMapMarkers = [{
+        latitude: this.teacherLat, longitude: this.teacherLng,
+        label: '教师位置', color: '#FF9500'
+      }];
+    } catch (_e2) {
+      this.teacherLocStatus = '获取位置失败，请确认设备已开启定位服务';
+      this.teacherLat = 0;
+      this.teacherLng = 0;
+    }
+  }
+
   async doCreateTask() {
     if (!this.newTaskTitle) {
       this.createResult = '请输入签到标题';
@@ -218,9 +293,71 @@ struct TeacherMain {
     this.createResult = '';
     const token = getToken();
     const rangeNum = parseInt(this.newTaskRange) || 100;
+
+    // For location tasks, get teacher's current GPS coordinates
+    let lat = 0;
+    let lng = 0;
+    if (this.newTaskType === 'location') {
+      // Use already-fetched location if available, otherwise fetch now
+      if (this.teacherLat !== 0 || this.teacherLng !== 0) {
+        lat = this.teacherLat;
+        lng = this.teacherLng;
+      } else {
+        // Request permission first, then get location
+        const granted = await requestLocationPermissions();
+        if (!granted) {
+          this.createResult = '请授予定位权限';
+          this.createSuccess = false;
+          this.createSubmitting = false;
+          return;
+        }
+        let gotLocation = false;
+        // Try current location
+        try {
+          const request: geolocation.CurrentLocationRequest = {
+            priority: geolocation.LocationRequestPriority.FIRST_FIX,
+            scenario: geolocation.LocationRequestScenario.UNSET,
+            timeoutMs: 15000,
+          };
+          const location = await geolocation.getCurrentLocation(request);
+          lat = location.latitude;
+          lng = location.longitude;
+          gotLocation = true;
+        } catch (_e1) {
+          // try last known location
+        }
+        if (!gotLocation) {
+          try {
+            const lastLoc = await geolocation.getLastLocation();
+            lat = lastLoc.latitude;
+            lng = lastLoc.longitude;
+            gotLocation = true;
+          } catch (_e2) {
+            // both failed
+          }
+        }
+        if (!gotLocation) {
+          this.createResult = '获取位置失败，请确认设备已开启定位服务';
+          this.createSuccess = false;
+          this.createSubmitting = false;
+          return;
+        }
+        this.teacherLat = lat;
+        this.teacherLng = lng;
+        this.teacherLocStatus = '已获取教师位置';
+        // Update map markers
+        this.teacherMapMarkers = [{
+          latitude: this.teacherLat,
+          longitude: this.teacherLng,
+          label: '教师位置',
+          color: '#FF9500'
+        }];
+      }
+    }
+
     try {
       const resp = await CheckinApi.createTask(
-        this.newTaskTitle, this.newTaskType, this.newTaskCode, rangeNum, 0, 0, token
+        this.newTaskTitle, this.newTaskType, this.newTaskCode, rangeNum, lat, lng, token
       ) as CreateTaskResponse;
       if (resp.code === 1 || resp.code === 200) {
         this.createSuccess = true;
@@ -299,6 +436,43 @@ struct TeacherMain {
               .padding({ left: 14 }).margin({ bottom: 8 })
               .type(InputType.Number)
               .onChange((v: string) => { this.newTaskRange = v })
+
+            // Get teacher location & show on map
+            Row() {
+              Button('📍 获取位置')
+                .type(ButtonType.Capsule).height(34).fontSize(12)
+                .fontColor(Color.White).backgroundColor('#34C759')
+                .onClick(() => { this.fetchTeacherLocation() })
+              if (this.teacherLocStatus) {
+                Text(this.teacherLocStatus)
+                  .fontSize(12)
+                  .fontColor(this.teacherLat !== 0 ? '#34C759' : '#FF3B30')
+                  .margin({ left: 8 })
+              }
+              Blank()
+            }.width('100%').margin({ bottom: 6 })
+
+            if (this.teacherLat !== 0 || this.teacherLng !== 0) {
+              Column() {
+                MapKitView({
+                  centerLat: this.teacherLat,
+                  centerLng: this.teacherLng,
+                  zoom: 15,
+                  markers: this.teacherMapMarkers
+                })
+                  .width('100%')
+                  .height(180)
+
+                Row() {
+                  Circle().width(10).height(10).fill('#FF9500')
+                  Text('教师参考位置').fontSize(12).fontColor('#8E8E93').margin({ left: 4 })
+                  Text('经度: ' + this.teacherLng.toFixed(4) + ' 纬度: ' + this.teacherLat.toFixed(4))
+                    .fontSize(11).fontColor('#C7C7CC').margin({ left: 8 })
+                  Blank()
+                }.width('100%').margin({ top: 4 })
+              }
+              .margin({ bottom: 8 })
+            }
           }
 
           Row() {
@@ -567,6 +741,18 @@ struct TeacherMain {
     else { return '#FF3B30' }
   }
 
+  getFilteredLeaves(): LeaveRecord[] {
+    const kw = this.searchKeyword.trim().toLowerCase()
+    if (!kw) { return this.leaves }
+    return this.leaves.filter((l: LeaveRecord) => {
+      return l.studentName.toLowerCase().includes(kw) ||
+        l.studentNo.toLowerCase().includes(kw) ||
+        l.leaveType.toLowerCase().includes(kw) ||
+        l.reason.toLowerCase().includes(kw) ||
+        this.getLeaveStatusText(l.status).toLowerCase().includes(kw)
+    })
+  }
+
   @Builder TabLeaveRecords() {
     Column() {
       Text('请假记录')
@@ -575,13 +761,23 @@ struct TeacherMain {
         .width('100%')
         .padding({ left: 20, top: 16, bottom: 8 })
 
+      TextInput({ placeholder: '搜索姓名/学号/类型/原因...', text: this.searchKeyword })
+        .width('100%')
+        .height(40)
+        .fontSize(14)
+        .backgroundColor('#F2F2F7')
+        .borderRadius(8)
+        .padding({ left: 12, right: 12 })
+        .margin({ left: 16, right: 16, bottom: 8 })
+        .onChange((value: string) => { this.searchKeyword = value })
+
       if (this.leavesLoading) {
         LoadingProgress().width(36).height(36).margin({ top: 60 })
       } else if (this.leaves.length === 0) {
         Text('暂无请假记录').fontSize(14).fontColor('#C7C7CC').margin({ top: 60 })
       } else {
         List() {
-          ForEach(this.leaves, (leave: LeaveRecord) => {
+          ForEach(this.getFilteredLeaves(), (leave: LeaveRecord) => {
             ListItem() {
               Column() {
                 Row() {
@@ -666,9 +862,16 @@ struct TeacherMain {
 
   // ==================== Tab 2: 数据统计 ====================
 
+  private totalSignedAgg: number = 0;
+  private totalUnsignedAgg: number = 0;
+  private leaveByDate: Map<string, number> = new Map();
+
   async loadStats() {
     this.statsLoading = true;
     const token = getToken();
+    this.totalSignedAgg = 0;
+    this.totalUnsignedAgg = 0;
+    this.leaveByDate = new Map();
     try {
       // Load active tasks
       const tResp = await CheckinApi.getTasks(token) as TaskListResponse;
@@ -681,6 +884,19 @@ struct TeacherMain {
         for (const t of activeTasks) {
           if (t.type === 'qrcode') { this.qrTaskCount++ } else { this.locationTaskCount++ }
           this.totalSignIns += t.signCount || 0;
+          // Aggregate per-task attendance
+          try {
+            const attResp = await CheckinApi.getAttendance(t.id, token) as AttendanceResponse;
+            if (attResp.code === 1 || attResp.code === 200) {
+              const d = attResp.data;
+              if (d) {
+                this.totalSignedAgg += d.signedCount || 0;
+                this.totalUnsignedAgg += d.unsignedCount || 0;
+              }
+            }
+          } catch (_e) {
+            // skip individual task errors
+          }
         }
       }
       // Load history tasks for additional counts
@@ -691,6 +907,19 @@ struct TeacherMain {
         for (const t of histTasks) {
           if (t.type === 'qrcode') { this.qrTaskCount++ } else { this.locationTaskCount++ }
           this.totalSignIns += t.signCount || 0;
+          // Aggregate per-task attendance
+          try {
+            const attResp = await CheckinApi.getAttendance(t.id, token) as AttendanceResponse;
+            if (attResp.code === 1 || attResp.code === 200) {
+              const d = attResp.data;
+              if (d) {
+                this.totalSignedAgg += d.signedCount || 0;
+                this.totalUnsignedAgg += d.unsignedCount || 0;
+              }
+            }
+          } catch (_e) {
+            // skip
+          }
         }
       }
       // Load leave stats
@@ -704,12 +933,145 @@ struct TeacherMain {
           if (l.status === 'pending') { this.pendingLeaveCount++ }
           else if (l.status === 'approved') { this.approvedLeaveCount++ }
           else { this.rejectedLeaveCount++ }
+          // Group by date (use applyTime or startDate)
+          const dateKey = l.applyTime ? l.applyTime.substring(0, 10) : (l.startDate || '未知');
+          this.leaveByDate.set(dateKey, (this.leaveByDate.get(dateKey) || 0) + 1);
         }
       }
     } catch (_e) {
       // silently fail
     }
+    // Build chart data
+    this.buildPieData();
+    this.buildLineData();
     this.statsLoading = false;
+  }
+
+  initPieChart(): void {
+    const desc: Description | null = this.pieModel.getDescription();
+    if (desc) { desc.setEnabled(false); }
+    const legend: Legend | null = this.pieModel.getLegend();
+    if (legend) {
+      legend.setEnabled(true);
+      legend.setVerticalAlignment(0); // top: LegendVerticalAlignment.TOP
+      legend.setHorizontalAlignment(0); // left: LegendHorizontalAlignment.LEFT
+      legend.setOrientation(0); // horizontal: LegendOrientation.HORIZONTAL
+    }
+    this.pieModel.setUsePercentValues(true);
+    this.pieModel.setDrawHoleEnabled(true);
+    this.pieModel.setHoleRadius(55);
+    this.pieModel.setHoleColor(0xFFFFFFFF);
+    this.pieModel.setTransparentCircleRadius(60);
+    this.pieModel.setTransparentCircleColor(0x11000000);
+    this.pieModel.setTransparentCircleAlpha(80);
+    this.pieModel.setDrawCenterText(true);
+    this.pieModel.setCenterText('签到统计');
+    this.pieModel.setCenterTextSize(14);
+    this.pieModel.setCenterTextColor(0xFF333333);
+    this.pieModel.setRotationEnabled(false);
+    this.pieModel.setHighlightPerTapEnabled(true);
+    this.pieModel.animateX(800);
+  }
+
+  initLineChart(): void {
+    const desc: Description | null = this.lineModel.getDescription();
+    if (desc) { desc.setEnabled(false); }
+    const legend: Legend | null = this.lineModel.getLegend();
+    if (legend) {
+      legend.setEnabled(true);
+      legend.setVerticalAlignment(1); // bottom
+      legend.setHorizontalAlignment(1); // center
+      legend.setOrientation(0); // horizontal
+    }
+    // X Axis
+    const xAxis = this.lineModel.getXAxis();
+    if (xAxis) {
+      xAxis.setPosition(1); // XAxisPosition.BOTTOM
+      xAxis.setDrawGridLines(false);
+      xAxis.setGranularity(1);
+    }
+    // Left Y Axis
+    const leftAxis = this.lineModel.getAxisLeft();
+    if (leftAxis) {
+      leftAxis.setAxisMinimum(0);
+      leftAxis.setGranularity(1);
+    }
+    // Right Y Axis disabled
+    const rightAxis = this.lineModel.getAxisRight();
+    if (rightAxis) {
+      rightAxis.setEnabled(false);
+    }
+    this.lineModel.setDragEnabled(true);
+    this.lineModel.setScaleEnabled(true);
+    this.lineModel.setPinchZoom(true);
+    this.lineModel.setDoubleTapToZoomEnabled(false);
+    this.lineModel.animateX(800);
+  }
+
+  buildPieData(): void {
+    const entries: JArrayList<PieEntry> = new JArrayList<PieEntry>();
+    if (this.totalSignedAgg > 0 || this.totalUnsignedAgg > 0) {
+      entries.add(new PieEntry(this.totalSignedAgg, '已签到'));
+      entries.add(new PieEntry(this.totalUnsignedAgg, '未签到'));
+    } else {
+      // Fallback: use task type counts
+      entries.add(new PieEntry(this.qrTaskCount > 0 ? this.qrTaskCount : 1, '已签到'));
+      entries.add(new PieEntry(this.locationTaskCount > 0 ? this.locationTaskCount : 0, '未签到'));
+    }
+    const dataSet: PieDataSet = new PieDataSet(entries, '签到统计');
+    dataSet.setSliceSpace(2);
+    dataSet.setSelectionShift(5);
+    dataSet.setValueTextColor(0xFFFFFFFF);
+    dataSet.setValueTextSize(12);
+    const colors: JArrayList<number> = new JArrayList<number>();
+    colors.add(0xFF34C759);
+    colors.add(0xFFFF3B30);
+    dataSet.setColorsByList(colors);
+    const pieData: PieData = new PieData(dataSet);
+    this.pieModel.setData(pieData);
+    this.pieModel.invalidate();
+  }
+
+  buildLineData(): void {
+    const entries: JArrayList<EntryOhos> = new JArrayList<EntryOhos>();
+    // Sort date keys
+    const sortedDates: string[] = [];
+    this.leaveByDate.forEach((_count: number, key: string) => {
+      sortedDates.push(key);
+    });
+    sortedDates.sort();
+    if (sortedDates.length === 0) {
+      entries.add(new EntryOhos(0, 0));
+    } else {
+      for (let i = 0; i < sortedDates.length; i++) {
+        const cnt = this.leaveByDate.get(sortedDates[i]) || 0;
+        entries.add(new EntryOhos(i, cnt));
+      }
+    }
+    const dataSet: LineDataSet = new LineDataSet(entries, '请假数量');
+    dataSet.setColorByColor(0xFFFF9500);
+    dataSet.setCircleColor(0xFFFF9500);
+    dataSet.setLineWidth(2);
+    dataSet.setCircleRadius(4);
+    dataSet.setDrawCircleHole(false);
+    dataSet.setValueTextSize(10);
+    dataSet.setValueTextColor(0xFF333333);
+    dataSet.setMode(1); // Mode.CUBIC_BEZIER - smooth curve
+    const dsList: JArrayList<ILineDataSet> = new JArrayList<ILineDataSet>();
+    dsList.add(dataSet);
+    const lineData: LineData = new LineData(dsList);
+    this.lineModel.setData(lineData);
+    // Set X axis labels to dates
+    const xAxis = this.lineModel.getXAxis();
+    if (xAxis && sortedDates.length > 0) {
+      xAxis.setValueFormatter({
+        getFormattedValue: (value: number, _axis: Object) => {
+          const idx = Math.round(value);
+          return idx >= 0 && idx < sortedDates.length ? sortedDates[idx].substring(5) : '';
+        }
+      });
+    }
+    this.lineModel.invalidate();
   }
 
   @Builder TabStats() {
@@ -725,24 +1087,43 @@ struct TeacherMain {
       } else {
         Scroll() {
           Column() {
-            // Checkin stats
+            // Checkin stats - Ring chart
             Text('📋 签到统计')
               .fontSize(16).fontWeight(FontWeight.Medium).width('90%').margin({ top: 8, bottom: 8 })
 
+            Column() {
+              PieChart({ model: this.pieModel })
+                .width('100%')
+                .height(260)
+            }
+            .width('90%')
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+            .padding(10)
+            .margin({ bottom: 10 })
+
+            // Summary numbers below ring chart
             Row() {
-              TeacherStatCard({ icon: '📋', label: '总任务数', v: this.totalTasks.toString(), c: '#007AFF' })
-              TeacherStatCard({ icon: '✅', label: '总签到人次', v: this.totalSignIns.toString(), c: '#34C759' })
+              TeacherStatCard({ icon: '✅', label: '已签到', v: this.totalSignedAgg.toString(), c: '#34C759' })
+              TeacherStatCard({ icon: '❌', label: '未签到', v: this.totalUnsignedAgg.toString(), c: '#FF3B30' })
             }.width('90%')
 
-            Row() {
-              TeacherStatCard({ icon: '📱', label: '二维码任务', v: this.qrTaskCount.toString(), c: '#5856D6' })
-              TeacherStatCard({ icon: '📍', label: '位置任务', v: this.locationTaskCount.toString(), c: '#FF9500' })
-            }.width('90%')
-
-            // Leave stats
-            Text('📝 请假统计')
+            // Leave stats - Line chart
+            Text('📝 请假统计（按日期趋势）')
               .fontSize(16).fontWeight(FontWeight.Medium).width('90%').margin({ top: 16, bottom: 8 })
 
+            Column() {
+              LineChart({ model: this.lineModel })
+                .width('100%')
+                .height(260)
+            }
+            .width('90%')
+            .backgroundColor(Color.White)
+            .borderRadius(12)
+            .padding(10)
+            .margin({ bottom: 10 })
+
+            // Summary numbers below line chart
             Row() {
               TeacherStatCard({ icon: '⏳', label: '待审批', v: this.pendingLeaveCount.toString(), c: '#FF9500' })
               TeacherStatCard({ icon: '✅', label: '已批准', v: this.approvedLeaveCount.toString(), c: '#34C759' })

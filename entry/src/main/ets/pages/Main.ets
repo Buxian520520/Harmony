@@ -55,6 +55,8 @@ interface SignInParams {
   type: string;
   code: string;
   range: number;
+  teacherLat?: number;
+  teacherLng?: number;
 }
 
 // ==================== Main Page ====================
@@ -141,7 +143,9 @@ struct Main {
       taskTitle: task.title,
       type: task.type,
       code: task.code || '',
-      range: task.range || 100
+      range: task.range || 100,
+      teacherLat: task.lat || 0,
+      teacherLng: task.lng || 0
     };
     router.pushUrl({ url: 'pages/Checkin', params: params });
   }

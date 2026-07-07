@@ -1,6 +1,22 @@
 ﻿import router from '@ohos.router';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
+import {
+  PieChart,
+  PieChartModel,
+  PieData,
+  PieDataSet,
+  PieEntry,
+  LineChart,
+  LineChartModel,
+  LineData,
+  LineDataSet,
+  EntryOhos,
+  JArrayList,
+  Legend,
+  Description,
+  ILineDataSet
+} from '@ohos/mpchart';
 
 interface CheckinRecord {
   id: number;
@@ -46,15 +62,138 @@ struct Statistics {
   @State totalCheckins: number = 0;
   @State qrCount: number = 0;
   @State locationCount: number = 0;
+  // Chart models
+  private pieModel: PieChartModel = new PieChartModel();
+  private lineModel: LineChartModel = new LineChartModel();
+  // Leave by date for line chart
+  private leaveByDate: Map<string, number> = new Map();
 
   private token: string = '';
 
   aboutToAppear() {
+    this.initPieChart();
+    this.initLineChart();
     this.loadData();
+  }
+
+  initPieChart(): void {
+    const desc: Description | null = this.pieModel.getDescription();
+    if (desc) { desc.setEnabled(false); }
+    const legend: Legend | null = this.pieModel.getLegend();
+    if (legend) {
+      legend.setEnabled(true);
+      legend.setVerticalAlignment(1);
+      legend.setHorizontalAlignment(1);
+      legend.setOrientation(0);
+    }
+    this.pieModel.setUsePercentValues(true);
+    this.pieModel.setDrawHoleEnabled(true);
+    this.pieModel.setHoleRadius(55);
+    this.pieModel.setHoleColor(0xFFFFFFFF);
+    this.pieModel.setTransparentCircleRadius(60);
+    this.pieModel.setTransparentCircleColor(0x11000000);
+    this.pieModel.setDrawCenterText(true);
+    this.pieModel.setCenterText('签到类型');
+    this.pieModel.setCenterTextSize(12);
+    this.pieModel.setCenterTextColor(0xFF333333);
+    this.pieModel.setRotationEnabled(false);
+    this.pieModel.setHighlightPerTapEnabled(true);
+  }
+
+  initLineChart(): void {
+    const desc: Description | null = this.lineModel.getDescription();
+    if (desc) { desc.setEnabled(false); }
+    const legend: Legend | null = this.lineModel.getLegend();
+    if (legend) {
+      legend.setEnabled(true);
+      legend.setVerticalAlignment(1);
+      legend.setHorizontalAlignment(1);
+    }
+    const xAxis = this.lineModel.getXAxis();
+    if (xAxis) {
+      xAxis.setPosition(0);
+      xAxis.setDrawGridLines(false);
+      xAxis.setGranularity(1);
+    }
+    const leftAxis = this.lineModel.getAxisLeft();
+    if (leftAxis) {
+      leftAxis.setAxisMinimum(0);
+      leftAxis.setGranularity(1);
+    }
+    const rightAxis = this.lineModel.getAxisRight();
+    if (rightAxis) {
+      rightAxis.setEnabled(false);
+    }
+    this.lineModel.setDragEnabled(true);
+    this.lineModel.setScaleEnabled(false);
+    this.lineModel.setDoubleTapToZoomEnabled(false);
+  }
+
+  buildPieData(): void {
+    const entries: JArrayList<PieEntry> = new JArrayList<PieEntry>();
+    if (this.qrCount > 0 || this.locationCount > 0) {
+      entries.add(new PieEntry(this.qrCount, '二维码'));
+      entries.add(new PieEntry(this.locationCount, '位置'));
+    } else {
+      entries.add(new PieEntry(1, '暂无数据'));
+    }
+    const dataSet: PieDataSet = new PieDataSet(entries, '签到方式');
+    dataSet.setSliceSpace(2);
+    dataSet.setSelectionShift(5);
+    dataSet.setValueTextColor(0xFFFFFFFF);
+    dataSet.setValueTextSize(12);
+    const colors: JArrayList<number> = new JArrayList<number>();
+    colors.add(0xFF007AFF);
+    colors.add(0xFFFF9500);
+    dataSet.setColorsByList(colors);
+    const pieData: PieData = new PieData(dataSet);
+    this.pieModel.setData(pieData);
+    this.pieModel.invalidate();
+  }
+
+  buildLineData(): void {
+    const entries: JArrayList<EntryOhos> = new JArrayList<EntryOhos>();
+    const sortedDates: string[] = [];
+    this.leaveByDate.forEach((_count: number, key: string) => {
+      sortedDates.push(key);
+    });
+    sortedDates.sort();
+    if (sortedDates.length === 0) {
+      entries.add(new EntryOhos(0, 0));
+    } else {
+      for (let i = 0; i < sortedDates.length; i++) {
+        const cnt = this.leaveByDate.get(sortedDates[i]) || 0;
+        entries.add(new EntryOhos(i, cnt));
+      }
+    }
+    const dataSet: LineDataSet = new LineDataSet(entries, '请假次数');
+    dataSet.setColorByColor(0xFFFF9500);
+    dataSet.setCircleColor(0xFFFF9500);
+    dataSet.setLineWidth(2);
+    dataSet.setCircleRadius(4);
+    dataSet.setDrawCircleHole(false);
+    dataSet.setValueTextSize(10);
+    dataSet.setValueTextColor(0xFF333333);
+    dataSet.setMode(1);
+    const dsList: JArrayList<ILineDataSet> = new JArrayList<ILineDataSet>();
+    dsList.add(dataSet);
+    const lineData: LineData = new LineData(dsList);
+    this.lineModel.setData(lineData);
+    const xAxis = this.lineModel.getXAxis();
+    if (xAxis && sortedDates.length > 0) {
+      xAxis.setValueFormatter({
+        getFormattedValue: (value: number, _axis: Object) => {
+          const idx = Math.round(value);
+          return idx >= 0 && idx < sortedDates.length ? sortedDates[idx].substring(5) : '';
+        }
+      });
+    }
+    this.lineModel.invalidate();
   }
 
   async loadData() {
     this.isLoading = true;
+    this.leaveByDate = new Map();
     try {
       // Load checkin records
       const checkinResp = await CheckinApi.getMyRecords(this.token) as CheckinRecordsResponse;
@@ -77,10 +216,16 @@ struct Statistics {
       const leaveResp = await LeaveApi.getMyLeaves(this.token) as LeaveRecordsResponse;
       if (leaveResp.code === 1) {
         this.leaves = leaveResp.data || [];
+        for (const l of this.leaves) {
+          const dateKey = l.applyTime ? l.applyTime.substring(0, 10) : (l.startDate || '未知');
+          this.leaveByDate.set(dateKey, (this.leaveByDate.get(dateKey) || 0) + 1);
+        }
       }
     } catch (e) {
       // Use empty data on failure
     } finally {
+      this.buildPieData();
+      this.buildLineData();
       this.isLoading = false;
     }
   }
@@ -147,6 +292,18 @@ struct Statistics {
         // Checkin records tab
         Scroll() {
           Column() {
+            // Ring chart for checkin types
+            Column() {
+              PieChart({ model: this.pieModel })
+                .width('100%')
+                .height(200)
+            }
+            .width('100%')
+            .backgroundColor(Color.White)
+            .borderRadius(10)
+            .padding(8)
+            .margin({ top: 12, bottom: 8 })
+
             // Summary cards
             Row() {
               StatCard({ icon: '📋', label: '总签到', value: this.totalCheckins.toString(), color: '#007AFF' })
@@ -154,7 +311,7 @@ struct Statistics {
               StatCard({ icon: '📍', label: '位置', value: this.locationCount.toString(), color: '#FF9500' })
             }
             .width('100%')
-            .margin({ top: 12 })
+            .margin({ top: 4 })
 
             // Records list
             if (this.records.length === 0) {
@@ -207,6 +364,18 @@ struct Statistics {
         // Leave records tab
         Scroll() {
           Column() {
+            // Line chart for leave trend
+            Column() {
+              LineChart({ model: this.lineModel })
+                .width('100%')
+                .height(200)
+            }
+            .width('100%')
+            .backgroundColor(Color.White)
+            .borderRadius(10)
+            .padding(8)
+            .margin({ top: 12, bottom: 8 })
+
             if (this.leaves.length === 0) {
               Text('暂无请假记录')
                 .fontSize(16)
