@@ -21,6 +21,7 @@ interface CreateTaskRequest {
   range: number;
   lat: number;
   lng: number;
+  class_ids?: number[];
 }
 
 interface EndTaskRequest {
@@ -67,8 +68,8 @@ export class CheckinApi {
   }
 
   /** Teacher: create a new checkin task */
-  static async createTask(title: string, type: string, code: string, range: number, lat: number, lng: number, token: string): Promise<object> {
-    const data: CreateTaskRequest = { title, type, code, range, lat, lng };
+  static async createTask(title: string, type: string, code: string, range: number, lat: number, lng: number, token: string, classIds: number[] = []): Promise<object> {
+    const data: CreateTaskRequest = { title, type, code, range, lat, lng, class_ids: classIds };
     return HttpClient.post('/checkin/create/', data, token);
   }
 

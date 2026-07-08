@@ -1,0 +1,3 @@
+[sandbox]
+workspace_root = "Z:\\HuaWei"
+allow_write = ["Z:\\HuaWei\\Backend-source", "Z:\\HuaWei\\StudentsManage"]

@@ -2,6 +2,7 @@ import router from '@ohos.router';
 import geolocation from '@ohos.geolocation';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
+import { ClassApi } from '../services/api/classApi';
 import { MapKitView, MapMarker } from '../widget/MapKitView';
 import { requestLocationPermissions } from '../services/utils/permissionUtil';
 import { Nav } from '../utils/NavigationUtil';
@@ -68,6 +69,23 @@ interface LeaveRecord {
   approvalTime: string;
 }
 
+interface ClassInfo {
+  id: number;
+  name: string;
+  checked: boolean;
+}
+
+interface ClassItem {
+  id: number;
+  name: string;
+}
+
+interface ClassListResponse {
+  code: number;
+  msg?: string;
+  data?: ClassItem[];
+}
+
 interface TaskListResponse { code: number; msg?: string; data?: CheckinTask[] }
 interface CreateTaskResponse { code: number; msg?: string }
 interface AttendanceData {
@@ -107,6 +125,8 @@ struct TeacherMain {
   @State createSubmitting: boolean = false;
   @State createResult: string = '';
   @State createSuccess: boolean = false;
+  @State classList: ClassInfo[] = [];
+  @State classListLoading: boolean = false;
   @State teacherLat: number = 0;
   @State teacherLng: number = 0;
   @State teacherLocStatus: string = '';
@@ -153,6 +173,7 @@ struct TeacherMain {
     this.loadTasks();
     this.loadLeaves();
     this.loadStats();
+    this.loadClasses();
   }
 
   onTabChange(index: number) {
@@ -184,6 +205,22 @@ struct TeacherMain {
       // silently fail
     }
     this.tasksLoading = false;
+  }
+
+  async loadClasses() {
+    this.classListLoading = true;
+    const token = getToken();
+    try {
+      const resp = await ClassApi.getList(token) as ClassListResponse;
+      if ((resp.code === 1 || resp.code === 200) && resp.data) {
+        this.classList = resp.data.map((c: ClassItem) => {
+          return { id: c.id, name: c.name, checked: false } as ClassInfo;
+        });
+      }
+    } catch (_e) {
+      // silently fail
+    }
+    this.classListLoading = false;
   }
 
   async viewAttendance(task: CheckinTask) {
@@ -366,8 +403,9 @@ struct TeacherMain {
     }
 
     try {
+      const selectedIds = this.classList.filter((c: ClassInfo) => c.checked).map((c: ClassInfo) => c.id);
       const resp = await CheckinApi.createTask(
-        this.newTaskTitle, this.newTaskType, this.newTaskCode, rangeNum, lat, lng, token
+        this.newTaskTitle, this.newTaskType, this.newTaskCode, rangeNum, lat, lng, token, selectedIds
       ) as CreateTaskResponse;
       if (resp.code === 1 || resp.code === 200) {
         this.createSuccess = true;
@@ -484,6 +522,41 @@ struct TeacherMain {
               .margin({ bottom: 8 })
             }
           }
+
+          // Class selection
+          Column() {
+            Text('选择班级（不选则全员）')
+              .fontSize(13)
+              .fontColor('#8E8E93')
+              .width('100%')
+              .margin({ bottom: 4 })
+
+            if (this.classListLoading) {
+              LoadingProgress().width(20).height(20)
+            } else if (this.classList.length === 0) {
+              Text('暂无班级数据')
+                .fontSize(12)
+                .fontColor('#C7C7CC')
+            } else {
+              ForEach(this.classList, (cls: ClassInfo) => {
+                Row() {
+                  Checkbox({ name: 'class_' + cls.id, group: 'classGroup' })
+                    .select(cls.checked)
+                    .onChange((value: boolean) => {
+                      cls.checked = value;
+                    })
+                  Text(cls.name)
+                    .fontSize(13)
+                    .fontColor('#333333')
+                    .margin({ left: 6 })
+                }
+                .width('100%')
+                .padding({ top: 4, bottom: 4 })
+              }, (cls: ClassInfo) => cls.id.toString())
+            }
+          }
+          .width('100%')
+          .margin({ bottom: 8 })
 
           Row() {
             Button('取消')
