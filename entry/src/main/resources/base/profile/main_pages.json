@@ -3,14 +3,7 @@
     "pages/Index",
     "pages/Login",
     "pages/Main",
-    "pages/Home",
-    "pages/Checkin",
-    "pages/Statistics",
-    "pages/Profile",
-    "pages/AttendanceDetail",
-    "pages/LeaveApply",
     "pages/Register",
-    "pages/Approval",
     "pages/TeacherMain"
   ]
 }

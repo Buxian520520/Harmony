@@ -1,9 +1,9 @@
-﻿import router from '@ohos.router';
-import geolocation from '@ohos.geolocation';
+﻿import geolocation from '@ohos.geolocation';
 import dataPreferences from '@ohos.data.preferences';
 import { CheckinApi } from '../services/api/checkinApi';
 import { MapKitView, MapMarker } from '../widget/MapKitView';
 import { requestLocationPermissions } from '../services/utils/permissionUtil';
+import { Nav } from '../utils/NavigationUtil';
 
 interface SignInResponse {
   code: number;
@@ -20,9 +20,8 @@ interface SignInParams {
   teacherLng?: number;
 }
 
-@Entry
 @Component
-struct Checkin {
+export struct CheckinComponent {
   @State taskId: number = 0;
   @State taskTitle: string = '签到';
   @State taskType: string = 'qrcode';
@@ -44,19 +43,21 @@ struct Checkin {
   private token: string = AppStorage.get<string>('access_token') || '';
 
   aboutToAppear() {
-    const params = router.getParams() as SignInParams;
-    this.taskId = params.taskId || 0;
-    this.taskTitle = params.taskTitle || '签到';
-    this.taskType = params.type || 'qrcode';
+    const params = AppStorage.get<SignInParams>('checkin_params');
+    if (params) {
+      this.taskId = params.taskId || 0;
+      this.taskTitle = params.taskTitle || '签到';
+      this.taskType = params.type || 'qrcode';
 
-    if (this.taskType === 'qrcode') {
-      this.taskCode = params.code || '';
-    } else {
-      this.taskRange = params.range || 100;
-      this.teacherLat = params.teacherLat || 0;
-      this.teacherLng = params.teacherLng || 0;
-      this.getDeviceId();
-      this.requestPermAndGetLocation();
+      if (this.taskType === 'qrcode') {
+        this.taskCode = params.code || '';
+      } else {
+        this.taskRange = params.range || 100;
+        this.teacherLat = params.teacherLat || 0;
+        this.teacherLng = params.teacherLng || 0;
+        this.getDeviceId();
+        this.requestPermAndGetLocation();
+      }
     }
   }
 
@@ -183,7 +184,8 @@ struct Checkin {
   }
 
   build() {
-    Stack() {
+    NavDestination() {
+      Stack() {
       // === Full-screen map (location mode) ===
       if (this.taskType === 'location') {
         MapKitView({
@@ -201,7 +203,7 @@ struct Checkin {
             Text('←').fontSize(22).fontColor('#333')
           }
           .width(40).height(40).borderRadius(20).backgroundColor('#FFFFFFDD')
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
 
           Column() {
             Text(this.taskTitle)
@@ -249,7 +251,7 @@ struct Checkin {
               Button('返回首页')
                 .type(ButtonType.Capsule).width('60%').height(44).fontSize(15)
                 .backgroundColor('#34C759').fontColor(Color.White).margin({ top: 16 })
-                .onClick(() => { router.back() })
+                .onClick(() => { Nav.stack.pop() })
             } else {
               Button('重试')
                 .type(ButtonType.Capsule).width('60%').height(44).fontSize(15)
@@ -268,7 +270,7 @@ struct Checkin {
         Column() {
           Row() {
             Text('←').fontSize(22)
-              .onClick(() => { router.back() })
+              .onClick(() => { Nav.stack.pop() })
             Text(this.taskTitle).fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 16 })
             Blank()
           }
@@ -305,5 +307,8 @@ struct Checkin {
     }
     .width('100%')
     .height('100%')
+    }
+    .title('签到')
+    .hideTitleBar(true)
   }
 }

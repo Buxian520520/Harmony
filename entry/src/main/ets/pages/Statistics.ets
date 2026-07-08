@@ -1,4 +1,4 @@
-﻿import router from '@ohos.router';
+﻿import { Nav } from '../utils/NavigationUtil';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
 import {
@@ -52,9 +52,8 @@ interface LeaveRecordsResponse {
   data?: LeaveRecord[];
 }
 
-@Entry
 @Component
-struct Statistics {
+export struct StatisticsComponent {
   @State records: CheckinRecord[] = [];
   @State leaves: LeaveRecord[] = [];
   @State isLoading: boolean = true;
@@ -251,12 +250,13 @@ struct Statistics {
   }
 
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       // Header
       Row() {
         Text('←')
           .fontSize(22)
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
         Text('我的记录')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
@@ -429,6 +429,9 @@ struct Statistics {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    }
+    .title('我的记录')
+    .hideTitleBar(true)
   }
 }
 

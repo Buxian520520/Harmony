@@ -1,4 +1,4 @@
-﻿import router from '@ohos.router';
+﻿import { Nav } from '../utils/NavigationUtil';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
 
@@ -88,9 +88,18 @@ interface TaskListResponse {
   data?: CheckinTask[];
 }
 
-@Entry
+interface SignInParams {
+  taskId: number;
+  taskTitle: string;
+  type: string;
+  code: string;
+  range: number;
+  teacherLat: number;
+  teacherLng: number;
+}
+
 @Component
-struct Home {
+export struct HomeComponent {
   @State tasks: CheckinTask[] = [];
   @State isLoading: boolean = true;
   @State errorMsg: string = '';
@@ -126,21 +135,22 @@ struct Home {
   }
 
   handleSignIn(task: CheckinTask) {
-    if (task.type === 'qrcode') {
-      router.pushUrl({
-        url: 'pages/Checkin',
-        params: { taskId: task.id, taskTitle: task.title, type: task.type, code: task.code }
-      });
-    } else {
-      router.pushUrl({
-        url: 'pages/Checkin',
-        params: { taskId: task.id, taskTitle: task.title, type: task.type, range: task.range, teacherLat: task.lat || 0, teacherLng: task.lng || 0 }
-      });
-    }
+    const params: SignInParams = {
+      taskId: task.id,
+      taskTitle: task.title,
+      type: task.type,
+      code: task.code || '',
+      range: task.range || 100,
+      teacherLat: task.lat || 0,
+      teacherLng: task.lng || 0
+    };
+    AppStorage.setOrCreate('checkin_params', params);
+    Nav.stack.pushPathByName('Checkin', undefined);
   }
 
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       // Header
       Row() {
         Column() {
@@ -167,7 +177,7 @@ struct Home {
             .position({ x: 14, y: 6 })
         }
         .onClick(() => {
-          router.pushUrl({ url: 'pages/Profile' });
+          Nav.stack.pushPathByName('Profile', undefined);
         })
       }
       .width('100%')
@@ -235,19 +245,19 @@ struct Home {
           Text('📝').fontSize(22)
           Text('请假').fontSize(12).fontColor('#8E8E93')
         }
-        .onClick(() => { router.pushUrl({ url: 'pages/LeaveApply' }) })
+        .onClick(() => { Nav.stack.pushPathByName('LeaveApply', undefined) })
 
         Column() {
           Text('📊').fontSize(22)
           Text('统计').fontSize(12).fontColor('#8E8E93')
         }
-        .onClick(() => { router.pushUrl({ url: 'pages/Statistics' }) })
+        .onClick(() => { Nav.stack.pushPathByName('Statistics', undefined) })
 
         Column() {
           Text('👤').fontSize(22)
           Text('我的').fontSize(12).fontColor('#8E8E93')
         }
-        .onClick(() => { router.pushUrl({ url: 'pages/Profile' }) })
+        .onClick(() => { Nav.stack.pushPathByName('Profile', undefined) })
       }
       .width('100%')
       .height(64)
@@ -258,5 +268,8 @@ struct Home {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    }
+    .title('签到任务')
+    .hideTitleBar(true)
   }
 }

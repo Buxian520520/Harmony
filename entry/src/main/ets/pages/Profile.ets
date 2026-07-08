@@ -1,18 +1,27 @@
 ﻿import router from '@ohos.router';
+import { Nav } from '../utils/NavigationUtil';
 
-@Entry
 @Component
-struct Profile {
+export struct ProfileComponent {
   @State userName: string = '学生';
   @State studentNo: string = '';
 
+  aboutToAppear() {
+    const savedName = AppStorage.get<string>('username') || '';
+    if (savedName) {
+      this.userName = savedName;
+      this.studentNo = savedName;
+    }
+  }
+
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       // Header
       Row() {
         Text('←')
           .fontSize(22)
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
         Text('个人中心')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
@@ -52,9 +61,9 @@ struct Profile {
 
       // Menu list
       Column() {
-        ProfileMenuItem({ icon: '📋', title: '签到任务', onClickAction: () => { router.pushUrl({ url: 'pages/Home' }) } })
-        ProfileMenuItem({ icon: '📊', title: '签到记录', onClickAction: () => { router.pushUrl({ url: 'pages/Statistics' }) } })
-        ProfileMenuItem({ icon: '📝', title: '请假申请', onClickAction: () => { router.pushUrl({ url: 'pages/LeaveApply' }) } })
+        ProfileMenuItem({ icon: '📋', title: '签到任务', onClickAction: () => { Nav.stack.pushPathByName('Home', undefined) } })
+        ProfileMenuItem({ icon: '📊', title: '签到记录', onClickAction: () => { Nav.stack.pushPathByName('Statistics', undefined) } })
+        ProfileMenuItem({ icon: '📝', title: '请假申请', onClickAction: () => { Nav.stack.pushPathByName('LeaveApply', undefined) } })
         ProfileMenuItem({ icon: 'ℹ️', title: '关于', onClickAction: () => {} })
       }
       .width('100%')
@@ -78,6 +87,9 @@ struct Profile {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    }
+    .title('个人中心')
+    .hideTitleBar(true)
   }
 }
 

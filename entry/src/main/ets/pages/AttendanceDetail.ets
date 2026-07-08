@@ -1,8 +1,7 @@
-﻿import router from '@ohos.router';
+﻿import { Nav } from '../utils/NavigationUtil';
 
-@Entry
 @Component
-struct AttendanceDetail {
+export struct AttendanceDetailComponent {
   @State message: string = '考勤详情';
 
   aboutToAppear() {
@@ -11,11 +10,12 @@ struct AttendanceDetail {
   }
 
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       Row() {
         Text('←')
           .fontSize(22)
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
         Text(this.message)
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
@@ -37,5 +37,8 @@ struct AttendanceDetail {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    }
+    .title('考勤详情')
+    .hideTitleBar(true)
   }
 }

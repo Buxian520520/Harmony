@@ -1,16 +1,16 @@
-﻿import router from '@ohos.router';
+﻿import { Nav } from '../utils/NavigationUtil';
 
-@Entry
 @Component
-struct Approval {
+export struct ApprovalComponent {
   @State message: string = '审批管理';
 
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       Row() {
         Text('←')
           .fontSize(22)
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
         Text(this.message)
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
@@ -32,5 +32,8 @@ struct Approval {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+    }
+    .title('审批管理')
+    .hideTitleBar(true)
   }
 }

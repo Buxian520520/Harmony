@@ -4,6 +4,14 @@ import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
 import { MapKitView, MapMarker } from '../widget/MapKitView';
 import { requestLocationPermissions } from '../services/utils/permissionUtil';
+import { Nav } from '../utils/NavigationUtil';
+import { CheckinComponent } from './Checkin';
+import { LeaveApplyComponent } from './LeaveApply';
+import { ProfileComponent } from './Profile';
+import { StatisticsComponent } from './Statistics';
+import { ApprovalComponent } from './Approval';
+import { AttendanceDetailComponent } from './AttendanceDetail';
+import { HomeComponent } from './Home';
 import {
   PieChart,
   PieChartModel,
@@ -84,6 +92,7 @@ function getToken(): string {
 @Entry
 @Component
 struct TeacherMain {
+  @Provide('navPathStack') navPathStack: NavPathStack = new NavPathStack();
   @State currentTab: number = 0;
   // Tab 0: 发布签到
   @State tasks: CheckinTask[] = [];
@@ -132,6 +141,7 @@ struct TeacherMain {
   private lineModel: LineChartModel = new LineChartModel();
 
   aboutToAppear() {
+    Nav.stack = this.navPathStack;
     // Redirect students to the student interface
     const userRole = AppStorage.get<string>('user_role') || 'student';
     if (userRole !== 'teacher') {
@@ -1056,7 +1066,7 @@ struct TeacherMain {
     dataSet.setDrawCircleHole(false);
     dataSet.setValueTextSize(10);
     dataSet.setValueTextColor(0xFF333333);
-    dataSet.setMode(1); // Mode.CUBIC_BEZIER - smooth curve
+    dataSet.setMode(2); // Mode.CUBIC_BEZIER - smooth curve
     const dsList: JArrayList<ILineDataSet> = new JArrayList<ILineDataSet>();
     dsList.add(dataSet);
     const lineData: LineData = new LineData(dsList);
@@ -1210,25 +1220,54 @@ struct TeacherMain {
     return AppStorage.get<string>('username') || '';
   }
 
+  // ==================== Navigation ====================
+
+  @Builder
+  NavDestinationMap(name: string) {
+    if (name === 'Checkin') {
+      CheckinComponent()
+    } else if (name === 'LeaveApply') {
+      LeaveApplyComponent()
+    } else if (name === 'Profile') {
+      ProfileComponent()
+    } else if (name === 'Statistics') {
+      StatisticsComponent()
+    } else if (name === 'Approval') {
+      ApprovalComponent()
+    } else if (name === 'AttendanceDetail') {
+      AttendanceDetailComponent()
+    } else if (name === 'Home') {
+      HomeComponent()
+    }
+  }
+
   // ==================== Build ====================
 
   build() {
-    Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
-      TabContent() { this.TabPublish() }
-      .tabBar(this.TabBarBuilder('📋', '发布签到', 0))
+    Navigation(this.navPathStack) {
+      Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
+        TabContent() { this.TabPublish() }
+        .tabBar(this.TabBarBuilder('📋', '发布签到', 0))
 
-      TabContent() { this.TabLeaveRecords() }
-      .tabBar(this.TabBarBuilder('📝', '请假记录', 1))
+        TabContent() { this.TabLeaveRecords() }
+        .tabBar(this.TabBarBuilder('📝', '请假记录', 1))
 
-      TabContent() { this.TabStats() }
-      .tabBar(this.TabBarBuilder('📊', '数据统计', 2))
+        TabContent() { this.TabStats() }
+        .tabBar(this.TabBarBuilder('📊', '数据统计', 2))
 
-      TabContent() { this.TabProfile() }
-      .tabBar(this.TabBarBuilder('👤', '我的', 3))
+        TabContent() { this.TabProfile() }
+        .tabBar(this.TabBarBuilder('👤', '我的', 3))
+      }
+      .barHeight(56)
+      .animationDuration(0)
+      .onChange((index: number) => { this.onTabChange(index) })
+      .width('100%')
+      .height('100%')
+      .backgroundColor('#F5F5F5')
     }
-    .barHeight(56)
-    .animationDuration(0)
-    .onChange((index: number) => { this.onTabChange(index) })
+    .mode(NavigationMode.Stack)
+    .hideTitleBar(true)
+    .navDestination(this.NavDestinationMap)
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')

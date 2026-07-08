@@ -1,4 +1,4 @@
-﻿import router from '@ohos.router';
+﻿import { Nav } from '../utils/NavigationUtil';
 import { LeaveApi } from '../services/api/leaveApi';
 
 interface LeaveApplyResponse {
@@ -6,9 +6,8 @@ interface LeaveApplyResponse {
   msg?: string;
 }
 
-@Entry
 @Component
-struct LeaveApply {
+export struct LeaveApplyComponent {
   @State startDate: string = '';
   @State endDate: string = '';
   @State leaveType: string = '事假';
@@ -20,12 +19,13 @@ struct LeaveApply {
   private token: string = '';
 
   build() {
-    Column() {
+    NavDestination() {
+      Column() {
       // Header
       Row() {
         Text('←')
           .fontSize(22)
-          .onClick(() => { router.back() })
+          .onClick(() => { Nav.stack.pop() })
         Text('请假申请')
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
@@ -181,5 +181,8 @@ struct LeaveApply {
     .height('100%')
     .backgroundColor('#F5F5F5')
     .alignItems(HorizontalAlign.Center)
+    }
+    .title('请假申请')
+    .hideTitleBar(true)
   }
 }

@@ -5,6 +5,14 @@ import { preferences } from '@kit.ArkData';
 import { CheckinApi } from '../services/api/checkinApi';
 import { LeaveApi } from '../services/api/leaveApi';
 import { NotificationService } from '../services/NotificationService';
+import { Nav } from '../utils/NavigationUtil';
+import { CheckinComponent } from './Checkin';
+import { LeaveApplyComponent } from './LeaveApply';
+import { ProfileComponent } from './Profile';
+import { StatisticsComponent } from './Statistics';
+import { ApprovalComponent } from './Approval';
+import { AttendanceDetailComponent } from './AttendanceDetail';
+import { HomeComponent } from './Home';
 
 // --- Data Interfaces ---
 
@@ -22,8 +30,9 @@ interface CheckinTask {
 
 interface CheckinRecord {
   id: number;
-  task?: number;       // Django FK field name
+  task?: number;       // Django FK field name (may be number or nested object)
   taskId?: number;     // camelCase alias
+  task_id?: number;    // snake_case DB column name
   taskTitle: string;
   type: string;
   signTime: string;
@@ -87,6 +96,7 @@ interface SignInParams {
 @Entry
 @Component
 struct Main {
+  @Provide('navPathStack') navPathStack: NavPathStack = new NavPathStack();
   @State currentTab: number = 0;
   // Tab 0: 签到 task list
   @State tasks: CheckinTask[] = [];
@@ -125,8 +135,11 @@ struct Main {
   private notifPermRequested: boolean = false;
   // Polling observer — EntryAbility bumps this every 10s
   @StorageLink('pollTick') @Watch('onPollTickChange') pollTick: number = 0;
+  // React to newly-signed taskId from Checkin page (bypasses onPageShow reliance)
+  @StorageLink('signed_task_id') @Watch('onPendingSignInChange') pendingSignId: number = 0;
 
   aboutToAppear() {
+    Nav.stack = this.navPathStack;
     // Redirect teachers to the teacher interface
     const userRole = AppStorage.get<string>('user_role') || 'student';
     if (userRole === 'teacher') {
@@ -135,6 +148,12 @@ struct Main {
     }
     this.requestNotifPermission();
     this.applyPendingSignIn();
+    // Load user display name
+    const savedName = AppStorage.get<string>('username') || '';
+    if (savedName) {
+      this.userName = savedName;
+      this.studentNo = savedName;
+    }
     this.loadTasks();
     this.loadStats();
   }
@@ -146,6 +165,17 @@ struct Main {
     if (this.pollTick > 0) {
       this.loadTasks(true);
       this.loadStats(true);
+    }
+  }
+
+  /**
+   * Called when Checkin page sets signed_task_id after a successful sign-in.
+   * This bypasses the Navigation onPageShow reliability issue.
+   */
+  onPendingSignInChange(): void {
+    if (this.pendingSignId > 0) {
+      this.applyPendingSignIn();
+      this.loadTasks(true);
     }
   }
 
@@ -278,34 +308,28 @@ struct Main {
         this.tasksError = response.msg || '获取任务失败';
       }
 
-      // Rebuild signedTaskIds: check each task's attendance for current student's sno
+      // Rebuild signedTaskIds: fetch student's own checkin records (1 API call instead of N)
       try {
-        const sno = AppStorage.get<string>('username') || '';
-        if (sno && this.tasks.length > 0) {
-          const signedIds: number[] = [];
-          for (const task of this.tasks) {
-            try {
-              const attResp = await CheckinApi.getAttendance(task.id, token) as AttendanceResponse;
-              if (attResp.code === 1 || attResp.code === 200) {
-                const list = attResp.data?.list || [];
-                for (const r of list) {
-                  if (r.sno === sno && r.signTime) {
-                    signedIds.push(task.id);
-                    break;
-                  }
-                }
+        const myRecordsResp = await CheckinApi.getMyRecords(token) as CheckinRecordsResponse;
+        const signedIds: number[] = [];
+        if (myRecordsResp.code === 1 && myRecordsResp.data) {
+          for (const r of myRecordsResp.data) {
+            // Match record to task by title (taskTitle is reliably present — used in Statistics tab)
+            for (const task of this.tasks) {
+              if (r.taskTitle === task.title && signedIds.indexOf(task.id) === -1) {
+                signedIds.push(task.id);
+                break;
               }
-            } catch (_e2) {
-              // skip individual task errors
             }
           }
-          // Merge with locally-tracked IDs (from applyPendingSignIn)
-          for (const id of this.signedTaskIds) {
-            if (signedIds.indexOf(id) === -1) {
-              signedIds.push(id);
-            }
+        }
+        // Merge with locally-tracked IDs (from applyPendingSignIn)
+        for (const id of this.signedTaskIds) {
+          if (signedIds.indexOf(id) === -1) {
+            signedIds.push(id);
           }
-          this.signedTaskIds = signedIds;
+        }
+        this.signedTaskIds = signedIds;
 
           // ── Notification: new tasks & abnormal warnings ──
           for (const task of this.tasks) {
@@ -321,7 +345,6 @@ struct Main {
             }
             this.knownTaskIds.add(taskId);
           }
-        }
       } catch (_e2) {
         // silently skip
       }
@@ -351,7 +374,8 @@ struct Main {
       teacherLat: task.lat || 0,
       teacherLng: task.lng || 0
     };
-    router.pushUrl({ url: 'pages/Checkin', params: params });
+    AppStorage.setOrCreate('checkin_params', params);
+    Nav.stack.pushPathByName('Checkin', undefined);
   }
 
   async quickSignIn(task: CheckinTask) {
@@ -765,6 +789,7 @@ struct Main {
               .backgroundColor(this.leaveFilter === 'rejected' ? '#FF3B30' : '#F2F2F7')
               .borderRadius(10).padding({ left: 10, right: 10, top: 4, bottom: 4 })
               .margin({ left: 8 })
+              .onClick(() => { this.leaveFilter = 'rejected' })
             Blank()
           }.width('90%').margin({ top: 8, bottom: 8 })
 
@@ -849,10 +874,32 @@ struct Main {
     .width('100%').height('100%')
   }
 
+  // ==================== Navigation ====================
+
+  @Builder
+  NavDestinationMap(name: string) {
+    if (name === 'Checkin') {
+      CheckinComponent()
+    } else if (name === 'LeaveApply') {
+      LeaveApplyComponent()
+    } else if (name === 'Profile') {
+      ProfileComponent()
+    } else if (name === 'Statistics') {
+      StatisticsComponent()
+    } else if (name === 'Approval') {
+      ApprovalComponent()
+    } else if (name === 'AttendanceDetail') {
+      AttendanceDetailComponent()
+    } else if (name === 'Home') {
+      HomeComponent()
+    }
+  }
+
   // ==================== Build ====================
 
   build() {
-    Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
+    Navigation(this.navPathStack) {
+      Tabs({ barPosition: BarPosition.End, index: this.currentTab }) {
         TabContent() { this.TabCheckin() }
         .tabBar(this.TabBarBuilder('📋', '签到', 0))
 
@@ -871,6 +918,13 @@ struct Main {
       .width('100%')
       .height('100%')
       .backgroundColor('#F5F5F5')
+    }
+    .mode(NavigationMode.Stack)
+    .hideTitleBar(true)
+    .navDestination(this.NavDestinationMap)
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5F5F5')
   }
 
   @Builder TabBarBuilder(icon: string, title: string, idx: number) {
