@@ -361,7 +361,7 @@ struct Main {
       if (task.type === 'qrcode') {
         response = await CheckinApi.signInByQr(task.id, task.code, token) as SignInResponse;
       } else {
-        response = await CheckinApi.signInByLocation(task.id, 0, 0, token) as SignInResponse;
+        response = await CheckinApi.signInByLocation(task.id, 0, 0, '', token) as SignInResponse;
       }
       if (response.code === 1) {
         this.signedTaskIds.push(task.id);

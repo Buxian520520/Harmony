@@ -11,6 +11,7 @@ interface SignInLocationRequest {
   type: string;
   lat: number;
   lng: number;
+  device_id: string;
 }
 
 interface CreateTaskRequest {
@@ -45,8 +46,8 @@ export class CheckinApi {
   }
 
   /** Student: sign in via location */
-  static async signInByLocation(taskId: number, latitude: number, longitude: number, token: string): Promise<object> {
-    const data: SignInLocationRequest = { task_id: taskId, type: 'location', lat: latitude, lng: longitude };
+  static async signInByLocation(taskId: number, latitude: number, longitude: number, deviceId: string, token: string): Promise<object> {
+    const data: SignInLocationRequest = { task_id: taskId, type: 'location', lat: latitude, lng: longitude, device_id: deviceId };
     return HttpClient.post('/checkin/sign/', data, token);
   }
 

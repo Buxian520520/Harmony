@@ -1,5 +1,6 @@
 ﻿import router from '@ohos.router';
 import geolocation from '@ohos.geolocation';
+import dataPreferences from '@ohos.data.preferences';
 import { CheckinApi } from '../services/api/checkinApi';
 import { MapKitView, MapMarker } from '../widget/MapKitView';
 import { requestLocationPermissions } from '../services/utils/permissionUtil';
@@ -27,6 +28,7 @@ struct Checkin {
   @State taskType: string = 'qrcode';
   @State taskCode: string = '';
   @State taskRange: number = 100;
+  @State deviceId: string = '';
   @State latitude: number = 0;
   @State longitude: number = 0;
   @State locationStatus: string = '正在获取位置...';
@@ -53,8 +55,32 @@ struct Checkin {
       this.taskRange = params.range || 100;
       this.teacherLat = params.teacherLat || 0;
       this.teacherLng = params.teacherLng || 0;
+      this.getDeviceId();
       this.requestPermAndGetLocation();
     }
+  }
+
+  async getDeviceId() {
+    try {
+      const prefs = await dataPreferences.getPreferences(getContext(this), 'device_binding');
+      let id = await prefs.get('device_id', '') as string;
+      if (!id) {
+        id = this.generateUUID();
+        await prefs.put('device_id', id);
+        await prefs.flush();
+      }
+      this.deviceId = id;
+    } catch (_e) {
+      this.deviceId = '';
+    }
+  }
+
+  generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   async requestPermAndGetLocation() {
@@ -136,7 +162,7 @@ struct Checkin {
           this.isSigningIn = false;
           return;
         }
-        response = await CheckinApi.signInByLocation(this.taskId, this.latitude, this.longitude, this.token) as SignInResponse;
+        response = await CheckinApi.signInByLocation(this.taskId, this.latitude, this.longitude, this.deviceId, this.token) as SignInResponse;
       }
 
       if (response.code === 1 || response.code === 200) {
